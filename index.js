@@ -1,31 +1,35 @@
 const express = require("express");
+const YTDlpWrap = require("yt-dlp-wrap").default;
 const cors = require("cors");
+const path = require("path");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const ytDlpPath = path.join(process.cwd(), "yt-dlp");
+const ytDlp = new YTDlpWrap(ytDlpPath);
+
+YTDlpWrap.downloadFromGithub(ytDlpPath).then(() => {
+  console.log("yt-dlp ready");
+}).catch(e => console.error("failed:", e));
 
 app.get("/", (req, res) => res.send("running"));
 
 app.post("/", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "no url" });
+
+  // Block YouTube — it won't work from cloud IPs
+  if (url.includes("youtube.com") || url.includes("youtu.be")) {
+    return res.status(400).json({ error: "YouTube not supported — paste a SoundCloud link instead" });
+  }
+
   try {
-    const cobaltRes = await fetch("https://api.cobalt.tools/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-      body: JSON.stringify({ url, downloadMode: "audio", audioFormat: "mp3" }),
-    });
-    const data = await cobaltRes.json();
-    console.log("Cobalt response:", data);
-    if (data.url || data.status === "stream" || data.status === "tunnel") {
-      return res.json({ url: data.url, status: "stream" });
-    }
-    return res.status(500).json({ error: data.error ?? "no url returned", raw: data });
+    const audioUrl = await ytDlp.execPromise([
+      url, "-f", "bestaudio", "--get-url", "--no-playlist"
+    ]);
+    return res.json({ url: audioUrl.trim(), status: "stream" });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
