@@ -10,19 +10,14 @@ app.use(express.json());
 const ytDlpPath = path.join(process.cwd(), "yt-dlp");
 const ytDlp = new YTDlpWrap(ytDlpPath);
 
-YTDlpWrap.downloadFromGithub(ytDlpPath).then(() => {
-  console.log("yt-dlp ready");
-}).catch(e => console.error("failed:", e));
-
 app.get("/", (req, res) => res.send("running"));
 
 app.post("/", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "no url" });
 
-  // Block YouTube — it won't work from cloud IPs
   if (url.includes("youtube.com") || url.includes("youtu.be")) {
-    return res.status(400).json({ error: "YouTube not supported — paste a SoundCloud link instead" });
+    return res.status(400).json({ error: "YouTube not supported — use SoundCloud" });
   }
 
   try {
@@ -35,4 +30,13 @@ app.post("/", async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("running"));
+// Download yt-dlp FIRST, then start server
+YTDlpWrap.downloadFromGithub(ytDlpPath)
+  .then(() => {
+    console.log("yt-dlp ready");
+    app.listen(process.env.PORT || 3000, () => console.log("running"));
+  })
+  .catch(e => {
+    console.error("yt-dlp download failed:", e);
+    process.exit(1);
+  });
