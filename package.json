@@ -2,9 +2,13 @@
   "name": "musictrial",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": { "start": "node index.js" },
+  "scripts": {
+    "build": "npm install",
+    "start": "node index.js"
+  },
   "dependencies": {
     "express": "^4.18.2",
+    "yt-dlp-wrap": "^2.3.12",
     "cors": "^2.8.5"
   }
 }
