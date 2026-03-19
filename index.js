@@ -47,7 +47,10 @@ function runYtDlp(url) {
       { timeout: 30000 },
       (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr || err.message));
-        resolve(stdout.trim());
+        // Take first non-empty line
+        const lines = stdout.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) return reject(new Error("no url returned"));
+        resolve(lines[0]);
       }
     );
   });
