@@ -21,21 +21,11 @@ function downloadYtDlp() {
       if (res.statusCode === 302 || res.statusCode === 301) {
         https.get(res.headers.location, res2 => {
           res2.pipe(file);
-          file.on("finish", () => {
-            file.close();
-            fs.chmodSync(ytDlpPath, "755");
-            console.log("yt-dlp downloaded");
-            resolve();
-          });
+          file.on("finish", () => { file.close(); fs.chmodSync(ytDlpPath, "755"); resolve(); });
         }).on("error", reject);
       } else {
         res.pipe(file);
-        file.on("finish", () => {
-          file.close();
-          fs.chmodSync(ytDlpPath, "755");
-          console.log("yt-dlp downloaded");
-          resolve();
-        });
+        file.on("finish", () => { file.close(); fs.chmodSync(ytDlpPath, "755"); resolve(); });
       }
     }).on("error", reject);
   });
@@ -43,13 +33,22 @@ function downloadYtDlp() {
 
 function runYtDlp(url) {
   return new Promise((resolve, reject) => {
-    execFile(ytDlpPath, [url, "-f", "bestaudio", "--get-url", "--no-playlist"], 
+    // First get video info to debug
+    execFile(ytDlpPath, [
+      url,
+      "-f", "bestaudio/best",
+      "--get-url",
+      "--no-playlist",
+      "--verbose",
+    ],
       { timeout: 30000 },
       (err, stdout, stderr) => {
+        console.log("STDOUT:", stdout);
+        console.log("STDERR:", stderr);
         if (err) return reject(new Error(stderr || err.message));
-        // Take first non-empty line
-        const lines = stdout.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-        if (lines.length === 0) return reject(new Error("no url returned"));
+        const lines = stdout.split("\n").map(l => l.trim()).filter(l => l.startsWith("http"));
+        console.log("URL lines:", lines);
+        if (lines.length === 0) return reject(new Error("no url returned. stdout: " + stdout.substring(0, 500)));
         resolve(lines[0]);
       }
     );
@@ -68,10 +67,11 @@ app.post("/", async (req, res) => {
     const audioUrl = await runYtDlp(url);
     return res.json({ url: audioUrl, status: "stream" });
   } catch (e) {
+    console.error("Error:", e.message);
     return res.status(500).json({ error: e.message });
   }
 });
 
 downloadYtDlp()
   .then(() => app.listen(process.env.PORT || 3000, () => console.log("running")))
-  .catch(e => { console.error("Failed to download yt-dlp:", e); process.exit(1); });
+  .catch(e => { console.error("Failed:", e); process.exit(1); });
