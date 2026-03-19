@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: jamango-music
+    name: musictrial
     runtime: node
     buildCommand: npm install && npm install -g yt-dlp
     startCommand: node index.js
