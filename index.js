@@ -13,18 +13,12 @@ const ytDlpPath = path.join(process.cwd(), "yt-dlp");
 
 function downloadYtDlp() {
   return new Promise((resolve, reject) => {
-    if (fs.existsSync(ytDlpPath)) {
-      console.log("yt-dlp exists");
-      return resolve();
-    }
+    if (fs.existsSync(ytDlpPath)) { console.log("yt-dlp exists"); return resolve(); }
     console.log("Downloading yt-dlp...");
     const file = fs.createWriteStream(ytDlpPath);
-    
     function download(url) {
       https.get(url, function(res) {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return download(res.headers.location);
-        }
+        if (res.statusCode === 301 || res.statusCode === 302) return download(res.headers.location);
         res.pipe(file);
         file.on("finish", function() {
           file.close();
@@ -34,47 +28,72 @@ function downloadYtDlp() {
         });
       }).on("error", reject);
     }
-    
     download("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp");
   });
 }
 
-function getAudioUrl(url) {
+function runYtDlp(args) {
   return new Promise(function(resolve, reject) {
-    execFile(ytDlpPath, [url, "-j", "--no-playlist"], { timeout: 30000 },
-      function(err, stdout, stderr) {
-        console.log("stderr:", stderr && stderr.substring(0, 300));
-        if (err) return reject(new Error(stderr || err.message));
-        try {
-          var info = JSON.parse(stdout);
-          var formats = (info.formats || [])
-            .filter(function(f) { return f.url && f.acodec !== "none"; })
-            .sort(function(a, b) { return (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0); });
-          if (formats.length > 0) return resolve(formats[0].url);
-          if (info.url) return resolve(info.url);
-          reject(new Error("no url found"));
-        } catch(e) {
-          reject(new Error("parse error: " + stdout.substring(0, 300)));
-        }
-      }
-    );
+    execFile(ytDlpPath, args, { timeout: 60000 }, function(err, stdout, stderr) {
+      console.log("stderr:", stderr && stderr.substring(0, 300));
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout);
+    });
   });
 }
 
 app.get("/", function(req, res) { res.send("running"); });
 
-app.post("/", function(req, res) {
+app.post("/", async function(req, res) {
   var url = req.body && req.body.url;
   if (!url) return res.status(400).json({ error: "no url" });
   if (url.includes("youtube.com") || url.includes("youtu.be")) {
     return res.status(400).json({ error: "YouTube not supported" });
   }
-  getAudioUrl(url).then(function(audioUrl) {
-    res.json({ url: audioUrl, status: "stream" });
-  }).catch(function(e) {
+
+  try {
+    // Get JSON info — works for both single tracks and playlists
+    const stdout = await runYtDlp([
+      url,
+      "-j",
+      "--flat-playlist", // fast — gets metadata without downloading
+      "--no-warnings",
+    ]);
+
+    // Each line is a JSON object (one per track)
+    const lines = stdout.trim().split("\n").filter(l => l.trim());
+    
+    if (lines.length === 0) return res.status(500).json({ error: "no tracks found" });
+
+    if (lines.length === 1) {
+      // Single track — return direct audio URL
+      const info = JSON.parse(lines[0]);
+      // Get actual stream URL
+      const streamOut = await runYtDlp([
+        info.webpage_url || url,
+        "-f", "bestaudio/best",
+        "--get-url",
+        "--no-playlist",
+      ]);
+      const streamUrl = streamOut.trim().split("\n").filter(l => l.startsWith("http"))[0];
+      if (!streamUrl) return res.status(500).json({ error: "no stream url" });
+      return res.json({ url: streamUrl, status: "stream", title: info.title });
+    }
+
+    // Playlist — return all track source URLs for client to queue
+    const tracks = lines.map(l => {
+      try {
+        const info = JSON.parse(l);
+        return { url: info.webpage_url || info.url, title: info.title || "Unknown" };
+      } catch(_) { return null; }
+    }).filter(Boolean);
+
+    return res.json({ playlist: tracks, status: "playlist" });
+
+  } catch(e) {
     console.error("error:", e.message);
-    res.status(500).json({ error: e.message });
-  });
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 downloadYtDlp().then(function() {
