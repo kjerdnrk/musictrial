@@ -13,7 +13,10 @@ const ytDlpPath = path.join(process.cwd(), "yt-dlp");
 
 function downloadYtDlp() {
   return new Promise(function(resolve, reject) {
-    if (fs.existsSync(ytDlpPath)) { console.log("yt-dlp exists"); return resolve(); }
+    if (fs.existsSync(ytDlpPath)) {
+      console.log("yt-dlp exists");
+      return resolve();
+    }
     console.log("Downloading yt-dlp...");
     const file = fs.createWriteStream(ytDlpPath);
     function download(url) {
@@ -41,18 +44,11 @@ function runYtDlp(url) {
         try {
           var info = JSON.parse(stdout);
           var formats = (info.formats || [])
-            .filter(function(f) {
-              return f.url && f.acodec !== "none" &&
-                     !f.url.includes(".m3u8") &&
-                     !f.url.includes("/playlist/") &&
-                     (f.protocol === "https" || f.protocol === "http");
-            })
+            .filter(function(f) { return f.url && f.acodec !== "none"; })
             .sort(function(a, b) { return (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0); });
-
-          console.log("Non-HLS formats:", formats.length);
           if (formats.length > 0) return resolve(formats[0].url);
-          if (info.url && !info.url.includes(".m3u8")) return resolve(info.url);
-          reject(new Error("only HLS available"));
+          if (info.url) return resolve(info.url);
+          reject(new Error("no url found"));
         } catch(e) {
           reject(new Error("parse error: " + stdout.substring(0, 300)));
         }
@@ -88,7 +84,6 @@ app.post("/", async function(req, res) {
     return res.status(400).json({ error: "YouTube not supported" });
   }
   try {
-    // Check if playlist
     var isPlaylist = url.includes("/sets/") || url.includes("playlist");
     if (isPlaylist) {
       var tracks = await getPlaylistUrls(url);
